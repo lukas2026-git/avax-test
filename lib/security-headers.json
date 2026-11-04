@@ -1,0 +1,5 @@
+{
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://coin-images.coingecko.com https://assets.coingecko.com; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+}

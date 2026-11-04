@@ -1,10 +1,10 @@
-// Development only. Vercel serves public/ and discovers api/*.js itself.
+// Lightweight local router. Netlify serves public/ and deploys netlify/functions/.
 const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const markets = require('../api/markets');
 const token = require('../api/token');
 const output = require('../api/output');
-const config = require('../vercel.json');
+const securityHeaders = require('../lib/security-headers.json');
 const files = {
   '/': ['index.html', 'text/html'],
   '/index.html': ['index.html', 'text/html'],
@@ -15,7 +15,7 @@ const files = {
   '/logo-unavailable.svg': ['logo-unavailable.svg', 'image/svg+xml']
 };
 module.exports = async function localRouter(req, res) {
-  for (const { key, value } of config.headers[0].headers) res.setHeader(key, value);
+  for (const [key, value] of Object.entries(securityHeaders)) res.setHeader(key, value);
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (pathname === '/api/markets') return markets(req, res);
   if (pathname === '/api/token' || pathname === '/token') return token(req, res);

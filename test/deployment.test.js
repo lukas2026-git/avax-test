@@ -3,19 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 
-test('Vercel uses separate functions, static output and only the token alias', () => {
-  const config = require('../vercel.json');
-  assert.equal(config.outputDirectory, 'public');
-  assert.equal(config.framework, null);
-  assert.equal(config.buildCommand, '');
-  assert.equal(config.builds, undefined);
-  assert.equal(config.routes, undefined);
-  assert.deepEqual(config.rewrites, [{ source: '/token', destination: '/api/token' }, { source: '/output', destination: '/api/output' }]);
-  assert.deepEqual(fs.readdirSync(require('node:path').join(__dirname, '../api')).sort(), ['markets.js', 'output.js', 'token.js']);
-  for (const endpoint of ['markets', 'token']) {
-    assert.equal(typeof require('../api/' + endpoint), 'function');
-    assert.equal(config.functions['api/' + endpoint + '.js'].maxDuration, 30);
+test('Netlify publishes static assets and bundles private data for file endpoints', () => {
+  const config = fs.readFileSync(require('node:path').join(__dirname, '../netlify.toml'), 'utf8');
+  assert.match(config, /publish = "public"/);
+  assert.match(config, /directory = "netlify\/functions"/);
+  for (const endpoint of ['token', 'output']) {
+    assert.ok(config.includes('[functions.' + endpoint + ']\n  included_files = ["data/**"]'));
   }
+  assert.equal(fs.existsSync(require('node:path').join(__dirname, '../vercel.json')), false);
 });
 
 test('each deployed function handles methods without a central router', async () => {

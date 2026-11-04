@@ -5,18 +5,14 @@ const { issueAccess, verifyAccess, clientIp } = require('../lib/output-access');
 const output = require('../api/output');
 const token = require('../api/token');
 const secret = 'test-only-' + 'x'.repeat(40);
-let oldSecret, oldVercel;
+let oldSecret;
 beforeEach(() => {
   oldSecret = process.env.OUTPUT_ACCESS_PASSWORD;
-  oldVercel = process.env.VERCEL;
   process.env.OUTPUT_ACCESS_PASSWORD = secret;
-  delete process.env.VERCEL;
 });
 afterEach(() => {
   if (oldSecret === undefined) delete process.env.OUTPUT_ACCESS_PASSWORD;
   else process.env.OUTPUT_ACCESS_PASSWORD = oldSecret;
-  if (oldVercel === undefined) delete process.env.VERCEL;
-  else process.env.VERCEL = oldVercel;
 });
 function req(val, ip = '192.0.2.1', url = '/output', method = 'GET') {
   return {method,url,headers:{authorization:'Bearer ' + val},socket:{remoteAddress:ip}};
@@ -50,15 +46,13 @@ test('independent grants bind to their IP, survive another instance, and reject 
   assert.doesNotThrow(()=>require('../lib/output-access').verifyAccess(req(a)));
 });
 
-test('IP comes from socket locally and trusted Vercel header only on Vercel', () => {
+test('client IP ignores caller-supplied forwarded headers', () => {
   const request = req('');
-  request.headers['x-vercel-forwarded-for'] = '192.0.2.2';
+  request.headers['x-nf-client-connection-ip'] = '192.0.2.2';
   request.headers['x-forwarded-for'] = '192.0.2.3';
-  assert.equal(clientIp(request),'192.0.2.1');
-  process.env.VERCEL = '1';
-  assert.equal(clientIp(request),'192.0.2.2');
-  delete request.headers['x-vercel-forwarded-for'];
-  assert.throws(()=>clientIp(request),/unavailable/);
+  assert.equal(clientIp(request), '192.0.2.1');
+  delete request.socket;
+  assert.throws(() => clientIp(request), /unavailable/);
 });
 
 test('issuance includes prices, needs no credential and ignores user agent', async t => {

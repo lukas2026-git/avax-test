@@ -1,0 +1,24 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[functions.token]
+  included_files = ["data/**"]
+
+[functions.output]
+  included_files = ["data/**"]
+
+[dev]
+  framework = "#static"
+  publish = "public"
+  port = 8889
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    "X-Content-Type-Options" = "nosniff"
+    "Referrer-Policy" = "strict-origin-when-cross-origin"
+    "Content-Security-Policy" = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://coin-images.coingecko.com https://assets.coingecko.com; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"

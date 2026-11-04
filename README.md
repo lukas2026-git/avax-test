@@ -6,24 +6,39 @@ Use Node.js 22.9 or newer. Copy `.env.example` to `.env`, add your CoinGecko Dem
 
     npm start
 
-No third-party packages are required. Open the exact URL printed in the terminal. A free port is selected automatically; set `LOCAL_PORT=5173` in `.env` if you want a fixed local port. Use `npm run dev` for backend watch mode.
+No third-party runtime packages are required for the standalone server. Open the exact URL printed in the terminal. A free port is selected automatically; set `LOCAL_PORT=5173` in `.env` if you want a fixed local port. Use `npm run dev` for backend watch mode.
 
-## Vercel deployment
+## Netlify deployment
 
-Extract this ZIP into a clean folder. Do not merge it with an older release that contains `api/index.js`. The old catch-all function has been removed.
+Connect this repository to Netlify with the repository root as the base directory.
+The checked-in `netlify.toml` publishes `public/` and discovers the three functions
+in `netlify/functions/`. Leave the build command empty: this project does not
+need a compilation step. Do not use `npm start` as a build command.
 
-Import the project into Vercel with the root directory containing `vercel.json`, `api/`, and `public/`. Choose Framework Preset **Other**. The checked-in configuration sets no build command and sets Output Directory to **public**; remove conflicting dashboard overrides. Add `COINGECKO_DEMO_API_KEY` in Vercel's environment variables for the deployment environment, then deploy/redeploy.
-
-Do not set the build command to `npm start`. The local server is development-only and is not deployed. Vercel functions do not call `listen()` or need a port.
+Set `COINGECKO_DEMO_API_KEY` and `OUTPUT_ACCESS_PASSWORD` in Netlify's environment
+variables with Functions scope for each deployment context that needs them.
+The output encryption secret must be at least 32 bytes. Keep both values
+server-side and redeploy after changes.
 
 | URL | Implementation |
 | --- | --- |
-| `/` and static assets | `public/`, served directly by Vercel |
-| `/api/markets` | `api/markets.js`, independent Node function |
-| `/api/token` | `api/token.js`, independent Node function |
-| `/token` | Rewrite to `/api/token` |
-| `/output` | Rewrite to independent `api/output.js` |
-| `/api/output` | Authenticated access to `data/output.json` |
+| `/` and static assets | `public/`, served by Netlify |
+| `/api/markets` | `netlify/functions/markets.mts` |
+| `/api/token` and `/token` | `netlify/functions/token.mts` |
+| `/api/output` and `/output` | `netlify/functions/output.mts` |
+
+The function entrypoints use Netlify's Request/Response API and delegate to the
+shared handlers in `api/`. The adapter supplies the trusted `context.ip` for
+IP-bound grants. Private `data/` files are bundled with token and output functions
+and are never published as static assets. Security headers apply to static assets
+and function responses.
+
+For local testing with Netlify routing, environment variables, and functions, run:
+
+    netlify dev --port 8889
+
+The lightweight `npm start` server remains available for standalone development.
+Development dependencies are required for type checking; run `npm install` first.
 
 ## Output access and one-second expiry
 
@@ -34,7 +49,7 @@ Do not set the build command to `npm start`. The local server is development-onl
 
        node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
-   Set it as `OUTPUT_ACCESS_PASSWORD` in your local .env and Vercel environment.
+   Set it as `OUTPUT_ACCESS_PASSWORD` in your local .env and Netlify environment.
    This is now purely the server-side encryption key for the `/output` grant —
    `/token` no longer checks it against anything the caller sends, so it never
    needs to be shared with any client.
@@ -67,14 +82,13 @@ Only formatting changes between JSON and text; the data is the same.
 The endpoint reads and validates JSON only; it never executes file contents.
 
 The encrypted token carries the timestamp, so expiry works across separate
-Vercel instances without an in-memory timestamp map. Each issued token has its
+Netlify function instances without an in-memory timestamp map. Each issued token has its
 own lifetime; issuing another token does not revoke earlier tokens. This is
 expiry validation, not single-use enforcement: a token can be reused from the
 same IP within its one-second lifetime. Multiple clients behind the same public
 IP cannot be distinguished by IP alone.
 
-On Vercel, the implementation uses the platform's
-[`x-vercel-forwarded-for` header](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for).
+On Netlify, the function adapter uses the platform's trusted `context.ip`.
 Locally it uses the socket IP and ignores forwarded headers.
 Network latency and cold starts may exceed this strict one-second window;
 the client must then request a new access token. No automatic grace period is added.
@@ -86,7 +100,7 @@ Redeploy after changing the data file or secret.
 ### Node client
 
 Set `API_BASE_URL` in .env to the exact local URL printed by `npm start`
-or your HTTPS Vercel domain. `OUTPUT_ACCESS_PASSWORD` is server-side only now
+or your HTTPS Netlify domain. `OUTPUT_ACCESS_PASSWORD` is server-side only now
 and this client does not need it. Keep the local server running, then run in
 a second terminal:
 
@@ -101,9 +115,9 @@ Shared provider utilities live in `lib/`, outside the public folder and API entr
 
 ## Real data and failure handling
 
-The markets function requests 50 assets with names, logos, prices and seven-day chart history. The token function independently requests Bitcoin and Ethereum USD prices using CoinGecko's lightweight price endpoint. Successful token GET requests log both prices to the Node console (Vercel function logs when deployed).
+The markets function requests 50 assets with names, logos, prices and seven-day chart history. The token function independently requests Bitcoin and Ethereum USD prices using CoinGecko's lightweight price endpoint. Successful token GET requests log both prices to the Node console (Netlify function logs when deployed).
 
-Each upstream attempt has an 8-second timeout, with at most one retry for transient failures. Authorization failures and rate limits are not immediately retried. Both functions have a configured 30-second maximum duration; the browser waits up to 25 seconds.
+Each upstream attempt has an 8-second timeout, with at most one retry for transient failures. Authorization failures and rate limits are not immediately retried. Netlify synchronous functions support up to 60 seconds; the browser waits up to 25 seconds.
 
 Market responses are cached for 45 seconds, token responses for 15 seconds. Requests share an in-flight fetch within the same instance. After failure, verified cached prices can be returned for at most 15 minutes, labeled `mode: stale`. A cold instance with no cached data returns HTTP 503 with an explicit error and Retry-After header, never fabricated prices. These caches are per warm function instance, not persistent or shared across instances. CoinGecko outages and plan limits can still make data unavailable.
 
@@ -115,4 +129,13 @@ Keep the API key server-side in the environment, never in frontend code. Rotate 
 
     npm test
 
-Tests use mocked provider responses and local HTTP requests. They cover separate function exports, Vercel configuration, route aliases, market/token responses, retry/failure handling, stale-data behavior and chart helpers. They do not prove a live CoinGecko connection or a successful Vercel deployment.
+Tests use mocked provider responses and local HTTP requests. They cover separate function exports, Netlify configuration, route aliases, market/token responses, retry/failure handling, stale-data behavior and chart helpers. They do not prove a live CoinGecko connection or a successful Netlify deployment.
+
+    npm run typecheck
+
+The original token/output handlers currently have pre-existing behavior mismatches
+with the documented contract: token behavior depends on User-Agent and a `name`
+file parameter, and output file selection uses `purpose`. The migration preserves
+that behavior. The existing full test suite reports nine failures in those areas;
+the Netlify adapter tests validate routing, response conversion, trusted IP handling,
+and bundled private file access separately.
